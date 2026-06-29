@@ -8,7 +8,7 @@ Manage clinic operations: staff, patients, and departments — with role-based a
 
 ## Main Features
 
-- JWT authentication with refresh tokens
+- JWT authentication via httpOnly cookies with refresh tokens
 - Role-based access (admin, doctor, nurse, receptionist)
 - Patient management
 - Department and staff management
@@ -84,28 +84,22 @@ docs/
 
 ## Authentication Flow
 
-1. User logs in with username/password → receives `accessToken` (15m) + `refreshToken` (7d)
-2. Access token sent as `Authorization: Bearer <token>` on protected routes
-3. On expiry, client calls `/api/auth/refresh` with refresh token
-4. Logout invalidates refresh token hash in database
+Auth uses **httpOnly cookies** (not tokens in the response body). Cookie names and paths:
 
-## Database Design
+| Cookie | Path | Lifetime (default) |
+|--------|------|--------------------|
+| `access_token` | `/` | 15m (`JWT_EXPIRES_IN`) |
+| `refresh_token` | `/api/auth` | 7d (`JWT_REFRESH_EXPIRES_IN`) |
 
-See [docs/DATABASE_DESIGN.md](docs/DATABASE_DESIGN.md) for collection schemas, embed vs reference decisions, and indexes.
+1. **Login** (`POST /api/auth/login`) — sets both cookies; response body returns user info only (`id`, `username`, `role`).
+2. **Protected routes** — the client sends cookies automatically. Browsers must use `credentials: 'include'` (fetch) or `withCredentials: true` (axios). `Authorization: Bearer <token>` is supported as a fallback for API clients.
+3. **Refresh** (`POST /api/auth/refresh`) — reads the httpOnly `refresh_token` cookie and updates `access_token`; no request body required.
+4. **Logout** (`POST /api/auth/logout`) — clears both cookies and invalidates the refresh token hash in the database.
 
-## Migration
+Cookies are `httpOnly`, `secure` in production, and `sameSite: 'lax'` in development / `'none'` in production (for cross-origin frontends over HTTPS).
 
-See [docs/MIGRATION.md](docs/MIGRATION.md) for SQL → MongoDB migration steps.
 
-## Deployment
-
-- Use MongoDB Atlas for managed database
-- Set `NODE_ENV=production`
-- Use strong JWT secrets (32+ chars)
-- Enable HTTPS via reverse proxy (Nginx)
-- Consider Redis for rate limiting at scale
-- Docker + GitHub Actions for CI/CD
 
 ## Testing
 
-Import `docs/postman-collection.json` into Postman. Login first to auto-set the access token variable.
+Import `docs/postman-collection.json` into Postman. Run **Auth → Login** first — Postman stores and sends the httpOnly auth cookies automatically for subsequent requests.
